@@ -127,6 +127,32 @@ export async function downloadTestCase(req: Request, res: Response): Promise<voi
   }
 }
 
+/**
+ * 마크다운 전체 문자열을 PDF로 변환해 응답으로 바로 내려줍니다. (서버에 파일 저장 없음)
+ * 사용자 PC로 다운로드할 때 사용.
+ */
+export async function exportPdfDownload(req: Request, res: Response): Promise<void> {
+  const { content } = req.body as { content?: string }
+  if (!content || typeof content !== 'string') {
+    res.status(400).json({ success: false, error: 'content(마크다운 문자열)가 필요합니다' } as ApiResponse)
+    return
+  }
+  try {
+    const pdfBuffer = await testCaseService.exportPdfBuffer(content)
+    const filename = '테스트케이스.pdf'
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`)
+    res.setHeader('Content-Type', 'application/pdf')
+    res.send(pdfBuffer)
+  } catch (error) {
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: `PDF 생성 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`,
+      } as ApiResponse)
+    }
+  }
+}
+
 export async function listTestCases(req: Request, res: Response): Promise<void> {
   try {
     const files = await fileService.listFiles()

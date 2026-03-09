@@ -1,4 +1,4 @@
-import { ClaudeService, ClaudeModelId, DEFAULT_MODEL } from './claude.service'
+import { ClaudeModelId } from './claude.service'
 import { FileService } from './file.service'
 import { GitDiffResult, ImpactAnalysis } from '../types'
 import { buildReportHeader, buildReportFooter } from '../utils/markdown.util'
@@ -6,11 +6,9 @@ import { markdownToPdf } from '../utils/pdf.util'
 import { Response } from 'express'
 
 export class TestCaseService {
-  private claudeService: ClaudeService
   private fileService: FileService
 
   constructor() {
-    this.claudeService = new ClaudeService()
     this.fileService = new FileService()
   }
 
@@ -20,22 +18,17 @@ export class TestCaseService {
     res: Response,
     projectName?: string,
     compareSummary?: string,
-    model: ClaudeModelId = DEFAULT_MODEL,
-    projectContextDocument?: string
+    _model?: ClaudeModelId,
+    _projectContextDocument?: string
   ): Promise<void> {
+    // 권고사항을 "3. 테스트케이스"에 넣은 완성 보고서를 한 번에 전송 (AI 호출 없음)
     const header = buildReportHeader(diff, analysis, projectName, compareSummary || '')
+    const footer = buildReportFooter()
+    const fullReport = header + footer
 
-    // 헤더를 먼저 전송
-    res.write(`data: ${JSON.stringify({ type: 'header', text: header })}\n\n`)
-
-    await this.claudeService.generateTestCasesStream(
-      diff,
-      analysis,
-      res,
-      projectName,
-      model,
-      projectContextDocument
-    )
+    res.write(`data: ${JSON.stringify({ type: 'header', text: fullReport })}\n\n`)
+    res.write(`data: ${JSON.stringify({ type: 'done', usage: { inputTokens: 0, outputTokens: 0 } })}\n\n`)
+    res.end()
   }
 
   async saveReport(
@@ -65,5 +58,12 @@ export class TestCaseService {
 
     const pdfBuffer = await markdownToPdf(fullMarkdown)
     return this.fileService.savePdf(pdfBuffer, projectName)
+  }
+
+  /**
+   * 마크다운 전체 문자열을 PDF Buffer로만 변환해 반환. (파일 저장 없음)
+   */
+  async exportPdfBuffer(fullMarkdown: string): Promise<Buffer> {
+    return markdownToPdf(fullMarkdown)
   }
 }

@@ -34,14 +34,15 @@ export function buildReportHeader(
     .map((a) => `| ${a.name} | ${RISK_LABELS[a.risk] || a.risk} | ${a.description} |`)
     .join('\n')
 
-  const projectRow = projectName?.trim() ? `| 프로젝트 | ${projectName} |\n` : ''
+  // 문서 정보 표 맨 위: 프로젝트 정보(깃허브 레포지토리 이름)
+  const projectInfoRow = `| 프로젝트 정보 | ${projectName?.trim() || '미지정'} |\n`
 
   return `# 테스트케이스 보고서
 
 ## 문서 정보
 | 항목 | 내용 |
 |------|------|
-${projectRow}| 생성 일시 | ${dateStr} |
+${projectInfoRow}| 생성 일시 | ${dateStr} |
 | 분석 기준 | ${compareSummary || '알 수 없음'} |
 | 전체 위험도 | ${RISK_LABELS[analysis.overallRisk] || analysis.overallRisk} |
 
@@ -70,12 +71,11 @@ ${fileStats}
 |-----------|--------|------|
 ${affectedAreas}
 
-### 테스트 권고사항
-${analysis.recommendations.map((r, i) => `${i + 1}. ${r}`).join('\n')}
-
 ---
 
 ## 3. 테스트케이스
+
+${analysis.recommendations.map((r, i) => `${i + 1}. ${r}`).join('\n\n')}
 
 `
 }

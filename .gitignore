@@ -7,5 +7,3 @@ logs/
 *.md.map
 .DS_Store
 .cursor/
-*.md
-!README.md

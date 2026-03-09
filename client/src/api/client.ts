@@ -109,3 +109,55 @@ export async function savePdfTestCase(payload: {
   if (!res.data.success) throw new Error(res.data.error)
   return res.data.data!
 }
+
+/**
+ * 마크다운 문자열을 파일로 사용자 PC에 바로 다운로드합니다. (서버 저장 없음)
+ * 브라우저 "다른 이름으로 저장"으로 경로 지정 가능.
+ */
+export function downloadMarkdownToUser(content: string, compareSummary?: string): void {
+  const safe = (s: string) => s.replace(/[^a-zA-Z0-9가-힣_-]/g, '_').slice(0, 30)
+  const name = safe(compareSummary || '테스트케이스')
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const filename = `테스트케이스_${name}_${timestamp}.md`
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+/**
+ * 전체 마크다운을 서버에서 PDF로 변환해 사용자 PC로 다운로드합니다. (서버에 파일 저장 없음)
+ */
+export async function downloadPdfToUser(fullMarkdown: string, compareSummary?: string): Promise<void> {
+  const base = typeof window !== 'undefined' ? window.location.origin : ''
+  const res = await fetch(`${base}/api/testcase/pdf-download`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: fullMarkdown }),
+    credentials: 'same-origin',
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || 'PDF 생성에 실패했습니다')
+  }
+  const blob = await res.blob()
+  const safe = (s: string) => s.replace(/[^a-zA-Z0-9가-힣_-]/g, '_').slice(0, 30)
+  const name = safe(compareSummary || '테스트케이스')
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const filename = `테스트케이스_${name}_${timestamp}.pdf`
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}

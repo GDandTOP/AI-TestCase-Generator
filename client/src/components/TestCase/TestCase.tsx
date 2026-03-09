@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useAppStore } from '../../store/useAppStore'
-import { saveTestCase, savePdfTestCase } from '../../api/client'
+import { downloadMarkdownToUser, downloadPdfToUser } from '../../api/client'
 
 export default function TestCase() {
   const store = useAppStore()
   const [isSaving, setIsSaving] = useState(false)
   const [isSavingPdf, setIsSavingPdf] = useState(false)
-  const [savedPdfFilename, setSavedPdfFilename] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   const fullContent = store.headerContent + store.tcContent
@@ -18,51 +17,38 @@ export default function TestCase() {
     store.compareType === 'commit' ? `${store.baseCommit}..${store.headCommit}` :
     `최근 ${store.recentCount}개 커밋`
 
+  /** MD 파일을 서버 저장 없이 사용자 PC로 바로 다운로드 (경로는 브라우저 "다른 이름으로 저장"에서 지정) */
   const handleSave = async () => {
-    if (!store.tcContent || !store.diffResult || !store.impactAnalysis) return
+    if (!fullContent?.trim()) {
+      store.setError('저장할 테스트케이스 내용이 없습니다')
+      return
+    }
     setIsSaving(true)
+    store.setError(null)
     try {
-      const { filename } = await saveTestCase({
-        content: store.tcContent,
-        diff: store.diffResult,
-        analysis: store.impactAnalysis,
-        projectName: store.projectName || store.repoPath.split('/').pop(),
-        compareSummary,
-      })
-      store.setSavedFilename(filename)
+      await downloadMarkdownToUser(fullContent, compareSummary)
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : '저장 실패')
+      store.setError(err instanceof Error ? err.message : 'MD 다운로드 실패')
     } finally {
       setIsSaving(false)
     }
   }
 
-  const handleDownload = () => {
-    if (store.savedFilename) window.open(`/api/testcase/download/${store.savedFilename}`, '_blank')
-  }
-
+  /** PDF를 서버 저장 없이 사용자 PC로 바로 다운로드 (경로는 브라우저 "다른 이름으로 저장"에서 지정) */
   const handleSavePdf = async () => {
-    if (!store.tcContent || !store.diffResult || !store.impactAnalysis) return
+    if (!fullContent?.trim()) {
+      store.setError('저장할 테스트케이스 내용이 없습니다')
+      return
+    }
     setIsSavingPdf(true)
     store.setError(null)
     try {
-      const { filename } = await savePdfTestCase({
-        content: store.tcContent,
-        diff: store.diffResult,
-        analysis: store.impactAnalysis,
-        projectName: store.projectName || store.repoPath.split('/').pop(),
-        compareSummary,
-      })
-      setSavedPdfFilename(filename)
+      await downloadPdfToUser(fullContent, compareSummary)
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : 'PDF 저장 실패')
+      store.setError(err instanceof Error ? err.message : 'PDF 다운로드 실패')
     } finally {
       setIsSavingPdf(false)
     }
-  }
-
-  const handleDownloadPdf = () => {
-    if (savedPdfFilename) window.open(`/api/testcase/download/${savedPdfFilename}`, '_blank')
   }
 
   const handleCopy = async () => {
@@ -209,53 +195,6 @@ export default function TestCase() {
             </button>
           </div>
 
-          {/* 다운로드 버튼 */}
-          {(store.savedFilename || savedPdfFilename) && (
-            <div className="flex gap-2">
-              {store.savedFilename && (
-                <button
-                  onClick={handleDownload}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[rgba(0,0,0,0.05)] text-apple-text rounded-apple-lg text-[13px] font-semibold hover:bg-[rgba(0,0,0,0.09)] active:scale-[0.99] transition-all duration-150"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                  </svg>
-                  MD 다운로드
-                </button>
-              )}
-              {savedPdfFilename && (
-                <button
-                  onClick={handleDownloadPdf}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[rgba(0,113,227,0.08)] text-[#0071e3] rounded-apple-lg text-[13px] font-semibold hover:bg-[rgba(0,113,227,0.14)] active:scale-[0.99] transition-all duration-150"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                  </svg>
-                  PDF 다운로드
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 저장 완료 */}
-      {store.savedFilename && (
-        <div className="flex items-center gap-2.5 p-3.5 bg-emerald-50 border border-emerald-100 rounded-apple text-[13px] text-emerald-700 animate-fade-in">
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-          MD 저장 완료:
-          <span className="font-mono text-[12px] ml-1">{store.savedFilename}</span>
-        </div>
-      )}
-      {savedPdfFilename && (
-        <div className="flex items-center gap-2.5 p-3.5 bg-blue-50 border border-blue-100 rounded-apple text-[13px] text-blue-700 animate-fade-in">
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-          PDF 저장 완료:
-          <span className="font-mono text-[12px] ml-1">{savedPdfFilename}</span>
         </div>
       )}
 

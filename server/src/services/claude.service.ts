@@ -101,10 +101,14 @@ export class ClaudeService {
       'Access-Control-Allow-Origin': '*',
     })
 
+    // 테스트케이스 섹션을 비우지 말고 반드시 본문을 채우도록 시스템 지시
+    const systemInstruction = `You are a QA engineer writing test cases in Markdown. Your response will be inserted directly under the heading "## 3. 테스트케이스" in a report. Do NOT write "## 3. 테스트케이스" again. Start your response immediately with "### TC-001:" and write at least 5 full test cases (### TC-001 through ### TC-005 or more). End with "## 테스트 실행 체크리스트" and list items. Never output an empty section or only a title.`
+
     try {
       const stream = await this.client.messages.stream({
         model,
-        max_tokens: 4096,
+        max_tokens: 8192,
+        system: systemInstruction,
         messages: [{ role: 'user', content: prompt }],
       })
 
