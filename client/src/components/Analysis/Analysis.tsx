@@ -22,6 +22,7 @@ export default function Analysis() {
     repoPath, projectName, compareType,
     baseBranch, headBranch, baseCommit, headCommit, recentCount,
     selectedModel,
+    projectContextDocument,
   } = useAppStore()
 
   if (!diffResult || !impactAnalysis) return null
@@ -49,6 +50,7 @@ export default function Analysis() {
           projectName: projectName || repoPath.split('/').pop(),
           compareSummary,
           model: selectedModel,
+          projectContextDocument: projectContextDocument || undefined,
         }),
       })
 

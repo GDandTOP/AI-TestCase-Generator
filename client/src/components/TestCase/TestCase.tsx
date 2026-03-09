@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useAppStore } from '../../store/useAppStore'
-import { saveTestCase } from '../../api/client'
+import { saveTestCase, savePdfTestCase } from '../../api/client'
 
 export default function TestCase() {
   const store = useAppStore()
   const [isSaving, setIsSaving] = useState(false)
+  const [isSavingPdf, setIsSavingPdf] = useState(false)
+  const [savedPdfFilename, setSavedPdfFilename] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   const fullContent = store.headerContent + store.tcContent
@@ -37,6 +39,30 @@ export default function TestCase() {
 
   const handleDownload = () => {
     if (store.savedFilename) window.open(`/api/testcase/download/${store.savedFilename}`, '_blank')
+  }
+
+  const handleSavePdf = async () => {
+    if (!store.tcContent || !store.diffResult || !store.impactAnalysis) return
+    setIsSavingPdf(true)
+    store.setError(null)
+    try {
+      const { filename } = await savePdfTestCase({
+        content: store.tcContent,
+        diff: store.diffResult,
+        analysis: store.impactAnalysis,
+        projectName: store.projectName || store.repoPath.split('/').pop(),
+        compareSummary,
+      })
+      setSavedPdfFilename(filename)
+    } catch (err) {
+      store.setError(err instanceof Error ? err.message : 'PDF 저장 실패')
+    } finally {
+      setIsSavingPdf(false)
+    }
+  }
+
+  const handleDownloadPdf = () => {
+    if (savedPdfFilename) window.open(`/api/testcase/download/${savedPdfFilename}`, '_blank')
   }
 
   const handleCopy = async () => {
@@ -133,40 +159,82 @@ export default function TestCase() {
 
       {/* 액션 버튼 */}
       {fullContent && !isStreaming && (
-        <div className="flex gap-2 animate-fade-in">
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="flex-1 flex items-center justify-center gap-2 py-3 bg-apple-text text-white rounded-apple-lg text-[13px] font-semibold hover:bg-[#2d2d2f] active:scale-[0.99] disabled:opacity-50 transition-all duration-150"
-          >
-            {isSaving ? (
-              <>
-                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                </svg>
-                저장 중...
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
-                </svg>
-                MD 파일 저장
-              </>
-            )}
-          </button>
-
-          {store.savedFilename && (
+        <div className="space-y-2 animate-fade-in">
+          {/* MD + PDF 저장 버튼 */}
+          <div className="flex gap-2">
             <button
-              onClick={handleDownload}
-              className="flex items-center gap-2 px-5 py-3 bg-[rgba(0,0,0,0.05)] text-apple-text rounded-apple-lg text-[13px] font-semibold hover:bg-[rgba(0,0,0,0.09)] active:scale-[0.99] transition-all duration-150"
+              onClick={handleSave}
+              disabled={isSaving || isSavingPdf}
+              className="flex-1 flex items-center justify-center gap-2 py-3 bg-apple-text text-white rounded-apple-lg text-[13px] font-semibold hover:bg-[#2d2d2f] active:scale-[0.99] disabled:opacity-50 transition-all duration-150"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-              </svg>
-              다운로드
+              {isSaving ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  저장 중...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+                  </svg>
+                  MD 저장
+                </>
+              )}
             </button>
+
+            <button
+              onClick={handleSavePdf}
+              disabled={isSaving || isSavingPdf}
+              className="flex-1 flex items-center justify-center gap-2 py-3 bg-[#0071e3] text-white rounded-apple-lg text-[13px] font-semibold hover:bg-[#0077ed] active:scale-[0.99] disabled:opacity-50 transition-all duration-150"
+            >
+              {isSavingPdf ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  PDF 생성 중...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                  </svg>
+                  PDF 저장
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* 다운로드 버튼 */}
+          {(store.savedFilename || savedPdfFilename) && (
+            <div className="flex gap-2">
+              {store.savedFilename && (
+                <button
+                  onClick={handleDownload}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[rgba(0,0,0,0.05)] text-apple-text rounded-apple-lg text-[13px] font-semibold hover:bg-[rgba(0,0,0,0.09)] active:scale-[0.99] transition-all duration-150"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                  </svg>
+                  MD 다운로드
+                </button>
+              )}
+              {savedPdfFilename && (
+                <button
+                  onClick={handleDownloadPdf}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[rgba(0,113,227,0.08)] text-[#0071e3] rounded-apple-lg text-[13px] font-semibold hover:bg-[rgba(0,113,227,0.14)] active:scale-[0.99] transition-all duration-150"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                  </svg>
+                  PDF 다운로드
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -177,8 +245,17 @@ export default function TestCase() {
           <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
-          저장 완료:
+          MD 저장 완료:
           <span className="font-mono text-[12px] ml-1">{store.savedFilename}</span>
+        </div>
+      )}
+      {savedPdfFilename && (
+        <div className="flex items-center gap-2.5 p-3.5 bg-blue-50 border border-blue-100 rounded-apple text-[13px] text-blue-700 animate-fade-in">
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          PDF 저장 완료:
+          <span className="font-mono text-[12px] ml-1">{savedPdfFilename}</span>
         </div>
       )}
 

@@ -95,6 +95,8 @@ interface AppState {
   branches: string[]
   commits: CommitInfo[]
   projectName: string
+  /** 프로젝트 구조 문서. 브랜치 로드 시 한 번만 받아 두고, 이후 영향도/TC 요청마다 재사용 */
+  projectContextDocument: string
 
   // Step 2: diff + 분석
   diffResult: GitDiffResult | null
@@ -122,6 +124,7 @@ interface AppState {
   setHeadCommit: (commit: string) => void
   setRecentCount: (count: number) => void
   setBranches: (branches: string[], commits: CommitInfo[]) => void
+  setProjectContextDocument: (doc: string) => void
   setProjectName: (name: string) => void
   setDiffResult: (diff: GitDiffResult) => void
   setImpactAnalysis: (analysis: ImpactAnalysis) => void
@@ -150,6 +153,7 @@ const initialState = {
   branches: [],
   commits: [],
   projectName: '',
+  projectContextDocument: '',
   diffResult: null,
   impactAnalysis: null,
   tcContent: '',
@@ -174,6 +178,7 @@ export const useAppStore = create<AppState>((set) => ({
   setHeadCommit: (commit) => set({ headCommit: commit }),
   setRecentCount: (count) => set({ recentCount: count }),
   setBranches: (branches, commits) => set({ branches, commits }),
+  setProjectContextDocument: (doc) => set({ projectContextDocument: doc }),
   setProjectName: (name) => set({ projectName: name }),
   setDiffResult: (diff) => set({ diffResult: diff }),
   setImpactAnalysis: (analysis) => set({ impactAnalysis: analysis }),

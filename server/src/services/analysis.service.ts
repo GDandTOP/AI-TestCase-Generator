@@ -8,7 +8,11 @@ export class AnalysisService {
     this.claudeService = new ClaudeService()
   }
 
-  async analyzeImpact(diff: GitDiffResult, model: ClaudeModelId = DEFAULT_MODEL): Promise<ImpactAnalysis> {
+  async analyzeImpact(
+    diff: GitDiffResult,
+    model: ClaudeModelId = DEFAULT_MODEL,
+    projectContextDocument?: string
+  ): Promise<ImpactAnalysis> {
     if (!diff.rawDiff || diff.rawDiff.trim().length === 0) {
       return {
         overallRisk: 'low',
@@ -18,6 +22,6 @@ export class AnalysisService {
       }
     }
 
-    return this.claudeService.analyzeImpact(diff, model)
+    return this.claudeService.analyzeImpact(diff, model, projectContextDocument)
   }
 }

@@ -50,7 +50,14 @@ export async function cloneRepo(githubUrl: string): Promise<string> {
 }
 
 export async function getBranches(repoPath: string) {
-  const res = await apiClient.post<ApiResponse<{ current: string; all: string[]; commits: Array<{ hash: string; message: string; date: string }> }>>('/git/branches', { repoPath })
+  const res = await apiClient.post<
+    ApiResponse<{
+      current: string
+      all: string[]
+      commits: Array<{ hash: string; message: string; date: string }>
+      projectContextDocument?: string
+    }>
+  >('/git/branches', { repoPath })
   if (!res.data.success) throw new Error(res.data.error)
   return res.data.data!
 }
@@ -67,8 +74,12 @@ export async function getDiff(payload: {
   return res.data.data
 }
 
-export async function analyzeImpact(diff: unknown, model?: string) {
-  const res = await apiClient.post<ApiResponse>('/analysis/impact', { diff, model })
+export async function analyzeImpact(diff: unknown, model?: string, projectContextDocument?: string) {
+  const res = await apiClient.post<ApiResponse>('/analysis/impact', {
+    diff,
+    model,
+    projectContextDocument: projectContextDocument || undefined,
+  })
   if (!res.data.success) throw new Error(res.data.error)
   return res.data.data
 }
@@ -81,6 +92,20 @@ export async function saveTestCase(payload: {
   compareSummary?: string
 }) {
   const res = await apiClient.post<ApiResponse<{ filename: string }>>('/testcase/save', payload)
+  if (!res.data.success) throw new Error(res.data.error)
+  return res.data.data!
+}
+
+export async function savePdfTestCase(payload: {
+  content: string
+  diff: unknown
+  analysis: unknown
+  projectName?: string
+  compareSummary?: string
+}) {
+  const res = await apiClient.post<ApiResponse<{ filename: string }>>('/testcase/save-pdf', payload, {
+    timeout: 120000, // PDF 변환은 시간이 걸릴 수 있음
+  })
   if (!res.data.success) throw new Error(res.data.error)
   return res.data.data!
 }

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { GitService } from '../services/git.service'
+import { buildProjectContextDocument } from '../services/project-context.service'
 import { env } from '../config/env'
 import { ApiResponse, GitDiffRequest } from '../types'
 
@@ -10,27 +11,37 @@ import { ApiResponse, GitDiffRequest } from '../types'
  * macOS 전용입니다. (Windows/Linux에서는 사용 불가)
  */
 export async function openFolderDialog(_req: Request, res: Response): Promise<void> {
-  // osascript 명령어: 폴더 선택 다이얼로그를 띄우고 POSIX 경로(절대 경로)를 반환
-  const script = `osascript -e 'POSIX path of (choose folder with prompt "Git 저장소 폴더를 선택하세요")'`
+  if (process.platform !== 'darwin') {
+    res.status(400).json({
+      success: false,
+      error: '폴더 선택 다이얼로그는 macOS 환경에서만 지원됩니다',
+    } as ApiResponse)
+    return
+  }
 
-  exec(script, (error, stdout, stderr) => {
-    if (error) {
-      // 사용자가 취소 버튼을 누른 경우 error.code가 1이고 stderr에 "User canceled."가 포함됨
-      if (stderr.includes('User canceled') || stderr.includes('cancel')) {
-        res.json({ success: true, data: { cancelled: true, path: null } } as ApiResponse)
-      } else {
-        res.status(500).json({
-          success: false,
-          error: '폴더 선택 다이얼로그를 열 수 없습니다. macOS 환경인지 확인하세요.',
-        } as ApiResponse)
+  // execFile 사용으로 쉘 인젝션 방지 (exec과 달리 쉘을 거치지 않음)
+  execFile(
+    'osascript',
+    ['-e', 'POSIX path of (choose folder with prompt "Git 저장소 폴더를 선택하세요")'],
+    (error, stdout, stderr) => {
+      if (error) {
+        // 사용자가 취소 버튼을 누른 경우
+        if (stderr.includes('User canceled') || stderr.includes('cancel')) {
+          res.json({ success: true, data: { cancelled: true, path: null } } as ApiResponse)
+        } else {
+          res.status(500).json({
+            success: false,
+            error: '폴더 선택 다이얼로그를 열 수 없습니다. macOS 환경인지 확인하세요.',
+          } as ApiResponse)
+        }
+        return
       }
-      return
-    }
 
-    // stdout에서 개행 문자 제거하여 깨끗한 경로 문자열 반환
-    const selectedPath = stdout.trim()
-    res.json({ success: true, data: { cancelled: false, path: selectedPath } } as ApiResponse)
-  })
+      // stdout에서 개행 문자 제거하여 깨끗한 경로 문자열 반환
+      const selectedPath = stdout.trim()
+      res.json({ success: true, data: { cancelled: false, path: selectedPath } } as ApiResponse)
+    }
+  )
 }
 
 /**
@@ -92,11 +103,34 @@ export async function getBranches(req: Request, res: Response): Promise<void> {
     const gitService = new GitService(repoPath)
     const branches = await gitService.getBranches()
     const commits = await gitService.getRecentCommits(20)
-    res.json({ success: true, data: { ...branches, commits } } as ApiResponse)
+    // 프로젝트 구조 문서는 한 번만 생성해 두고, 이후 API 호출 시 재사용
+    const document = await buildProjectContextDocument(repoPath)
+    res.json({ success: true, data: { ...branches, commits, projectContextDocument: document } } as ApiResponse)
   } catch (error) {
     res.status(500).json({
       success: false,
       error: `브랜치 조회 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`,
+    } as ApiResponse)
+  }
+}
+
+/**
+ * 저장소 경로로 프로젝트 구조 문서만 따로 요청할 때 사용 (선택).
+ * 현재는 getBranches 응답에 projectContextDocument를 포함해 한 번에 내려줍니다.
+ */
+export async function getProjectContext(req: Request, res: Response): Promise<void> {
+  const { repoPath } = req.body as { repoPath: string }
+  if (!repoPath) {
+    res.status(400).json({ success: false, error: '저장소 경로를 입력해주세요' } as ApiResponse)
+    return
+  }
+  try {
+    const document = await buildProjectContextDocument(repoPath)
+    res.json({ success: true, data: { document } } as ApiResponse)
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: `프로젝트 구조 문서 생성 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`,
     } as ApiResponse)
   }
 }

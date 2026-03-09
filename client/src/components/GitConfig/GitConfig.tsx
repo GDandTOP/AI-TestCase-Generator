@@ -30,8 +30,9 @@ export default function GitConfig() {
     try {
       await validateRepo(repoPathInput)
       store.setRepoPath(repoPathInput)
-      const { all, commits } = await getBranches(repoPathInput)
+      const { all, commits, projectContextDocument } = await getBranches(repoPathInput)
       store.setBranches(all, commits)
+      store.setProjectContextDocument(projectContextDocument ?? '')
       if (all.length >= 2) {
         store.setBaseBranch(all[0])
         store.setHeadBranch(all[1])
@@ -61,8 +62,9 @@ export default function GitConfig() {
       const localPath = await cloneRepo(githubUrlInput)
       store.setRepoPath(localPath)
       setCloneStatus('브랜치 목록 불러오는 중...')
-      const { all, commits } = await getBranches(localPath)
+      const { all, commits, projectContextDocument } = await getBranches(localPath)
       store.setBranches(all, commits)
+      store.setProjectContextDocument(projectContextDocument ?? '')
       if (all.length >= 2) {
         store.setBaseBranch(all[0])
         store.setHeadBranch(all[1])
@@ -117,7 +119,7 @@ export default function GitConfig() {
       store.setDiffResult(diff as GitDiffResult)
 
       store.setLoading(true, 'Claude AI로 영향도 분석 중...')
-      const analysis = await analyzeImpact(diff, store.selectedModel)
+      const analysis = await analyzeImpact(diff, store.selectedModel, store.projectContextDocument)
       store.setImpactAnalysis(analysis as ImpactAnalysis)
 
       store.goToStep(2)
@@ -148,8 +150,9 @@ export default function GitConfig() {
           <button
             onClick={() => {
               store.setRepoSourceType('local')
-              // 탭 전환 시 기존 로드 상태 초기화
+              // 탭 전환 시 기존 로드 상태·프로젝트 구조 문서 초기화
               store.setBranches([], [])
+              store.setProjectContextDocument('')
               store.setRepoPath('')
             }}
             className={`flex items-center gap-2.5 px-4 py-3 rounded-apple-lg border-2 text-left transition-all duration-200 ${
@@ -175,6 +178,7 @@ export default function GitConfig() {
             onClick={() => {
               store.setRepoSourceType('github')
               store.setBranches([], [])
+              store.setProjectContextDocument('')
               store.setRepoPath('')
             }}
             className={`flex items-center gap-2.5 px-4 py-3 rounded-apple-lg border-2 text-left transition-all duration-200 ${

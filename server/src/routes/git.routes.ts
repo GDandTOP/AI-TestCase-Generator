@@ -1,10 +1,11 @@
 import { Router } from 'express'
-import { validateRepo, getBranches, getDiff, cloneRepo, openFolderDialog } from '../controllers/git.controller'
+import { validateRepo, getBranches, getDiff, cloneRepo, openFolderDialog, getProjectContext } from '../controllers/git.controller'
 
 const router = Router()
 
 router.post('/validate', validateRepo)
 router.post('/branches', getBranches)
+router.post('/project-context', getProjectContext)
 router.post('/diff', getDiff)
 // GitHub URL로부터 저장소를 클론하는 엔드포인트
 router.post('/clone', cloneRepo)

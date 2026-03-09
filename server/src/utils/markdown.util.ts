@@ -10,7 +10,7 @@ const RISK_LABELS: Record<string, string> = {
 export function buildReportHeader(
   diff: GitDiffResult,
   analysis: ImpactAnalysis,
-  projectName: string,
+  projectName: string | undefined,
   compareSummary: string
 ): string {
   const now = new Date()
@@ -34,13 +34,14 @@ export function buildReportHeader(
     .map((a) => `| ${a.name} | ${RISK_LABELS[a.risk] || a.risk} | ${a.description} |`)
     .join('\n')
 
+  const projectRow = projectName?.trim() ? `| 프로젝트 | ${projectName} |\n` : ''
+
   return `# 테스트케이스 보고서
 
 ## 문서 정보
 | 항목 | 내용 |
 |------|------|
-| 프로젝트 | ${projectName || '미지정'} |
-| 생성 일시 | ${dateStr} |
+${projectRow}| 생성 일시 | ${dateStr} |
 | 분석 기준 | ${compareSummary || '알 수 없음'} |
 | 전체 위험도 | ${RISK_LABELS[analysis.overallRisk] || analysis.overallRisk} |
 
@@ -88,9 +89,9 @@ export function buildReportFooter(): string {
 `
 }
 
-export function generateFilename(projectName?: string): string {
+export function generateFilename(projectName?: string, ext: 'md' | 'pdf' = 'md'): string {
   const now = new Date()
   const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const prefix = projectName ? projectName.replace(/[^a-zA-Z0-9가-힣]/g, '_').slice(0, 20) : 'tc'
-  return `${prefix}_${timestamp}.md`
+  const prefix = projectName?.trim() ? projectName.replace(/[^a-zA-Z0-9가-힣]/g, '_').slice(0, 20) : 'tc'
+  return `${prefix}_${timestamp}.${ext}`
 }

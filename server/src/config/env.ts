@@ -10,6 +10,7 @@ const envSchema = z.object({
   OUTPUT_DIR: z.string().default('../output'),
   MAX_DIFF_SIZE: z.string().default('50000'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  FRONTEND_URL: z.string().optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -26,4 +27,5 @@ export const env = {
   OUTPUT_DIR: path.resolve(__dirname, '../../', parsed.data.OUTPUT_DIR),
   MAX_DIFF_SIZE: parseInt(parsed.data.MAX_DIFF_SIZE, 10),
   NODE_ENV: parsed.data.NODE_ENV,
+  FRONTEND_URL: parsed.data.FRONTEND_URL,
 }

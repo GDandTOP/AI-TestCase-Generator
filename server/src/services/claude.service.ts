@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { env } from '../config/env'
 import { GitDiffResult, ImpactAnalysis } from '../types'
 import { buildImpactAnalysisPrompt, buildTestCasePrompt } from '../utils/prompt.util'
+import { saveImpactPayload, saveTestcasePayload } from '../utils/log-payload.util'
 import { Response } from 'express'
 
 export const CLAUDE_MODELS = [
@@ -42,8 +43,18 @@ export class ClaudeService {
     this.client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
   }
 
-  async analyzeImpact(diff: GitDiffResult, model: ClaudeModelId = DEFAULT_MODEL): Promise<ImpactAnalysis> {
-    const prompt = buildImpactAnalysisPrompt(diff)
+  async analyzeImpact(
+    diff: GitDiffResult,
+    model: ClaudeModelId = DEFAULT_MODEL,
+    projectContextDocument?: string
+  ): Promise<ImpactAnalysis> {
+    const prompt = buildImpactAnalysisPrompt(diff, projectContextDocument)
+
+    // 개발 환경에서만 payload 저장 (민감한 코드 노출 방지)
+    if (env.NODE_ENV === 'development') {
+      const logPath = await saveImpactPayload(diff, prompt, model)
+      console.log('[Log] 영향도 분석 payload 저장:', logPath)
+    }
 
     const message = await this.client.messages.create({
       model,
@@ -72,9 +83,16 @@ export class ClaudeService {
     analysis: ImpactAnalysis,
     res: Response,
     projectName?: string,
-    model: ClaudeModelId = DEFAULT_MODEL
+    model: ClaudeModelId = DEFAULT_MODEL,
+    projectContextDocument?: string
   ): Promise<void> {
-    const prompt = buildTestCasePrompt(diff, analysis, projectName)
+    const prompt = buildTestCasePrompt(diff, analysis, projectName, projectContextDocument)
+
+    // 개발 환경에서만 payload 저장 (민감한 코드 노출 방지)
+    if (env.NODE_ENV === 'development') {
+      const logPath = await saveTestcasePayload(diff, analysis, projectName, prompt, model)
+      console.log('[Log] 테스트케이스 생성 payload 저장:', logPath)
+    }
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -83,31 +101,43 @@ export class ClaudeService {
       'Access-Control-Allow-Origin': '*',
     })
 
-    const stream = await this.client.messages.stream({
-      model,
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }],
-    })
+    try {
+      const stream = await this.client.messages.stream({
+        model,
+        max_tokens: 4096,
+        messages: [{ role: 'user', content: prompt }],
+      })
 
-    for await (const chunk of stream) {
-      if (
-        chunk.type === 'content_block_delta' &&
-        chunk.delta.type === 'text_delta'
-      ) {
-        const data = JSON.stringify({ type: 'delta', text: chunk.delta.text })
-        res.write(`data: ${data}\n\n`)
+      for await (const chunk of stream) {
+        // 클라이언트가 연결을 끊은 경우 스트리밍 중단
+        if (res.socket?.destroyed) {
+          stream.abort()
+          return
+        }
+        if (
+          chunk.type === 'content_block_delta' &&
+          chunk.delta.type === 'text_delta'
+        ) {
+          const data = JSON.stringify({ type: 'delta', text: chunk.delta.text })
+          res.write(`data: ${data}\n\n`)
+        }
       }
+
+      if (!res.socket?.destroyed) {
+        const finalMessage = await stream.finalMessage()
+        const usage = finalMessage.usage
+        res.write(
+          `data: ${JSON.stringify({
+            type: 'done',
+            usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens },
+          })}\n\n`
+        )
+      }
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : '알 수 없는 오류'
+      res.write(`data: ${JSON.stringify({ type: 'error', error: errMsg })}\n\n`)
+    } finally {
+      res.end()
     }
-
-    const finalMessage = await stream.finalMessage()
-    const usage = finalMessage.usage
-
-    res.write(
-      `data: ${JSON.stringify({
-        type: 'done',
-        usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens },
-      })}\n\n`
-    )
-    res.end()
   }
 }
