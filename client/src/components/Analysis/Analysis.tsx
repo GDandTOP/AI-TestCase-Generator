@@ -23,6 +23,7 @@ export default function Analysis() {
     baseBranch, headBranch, baseCommit, headCommit, recentCount,
     selectedModel,
     projectContextDocument,
+    githubUrl,
   } = useAppStore()
 
   if (!diffResult || !impactAnalysis) return null
@@ -41,16 +42,27 @@ export default function Analysis() {
     setHeaderContent('')
 
     try {
+      // 미지정일 때 쓸 레포 이름: GitHub URL에서 추출하거나 경로 마지막 폴더명
+      let repoName = ''
+      if (githubUrl?.trim()) {
+        try {
+          const pathParts = new URL(githubUrl).pathname.split('/').filter(Boolean)
+          repoName = (pathParts[pathParts.length - 1] || '').replace(/\.git$/i, '')
+        } catch { /* ignore */ }
+      }
+      if (!repoName && repoPath) repoName = repoPath.split('/').filter(Boolean).pop() || ''
+
       const response = await fetch('/api/testcase/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           diff: diffResult,
           analysis: impactAnalysis,
-          projectName: projectName || repoPath.split('/').pop(),
+          projectName: projectName?.trim() || undefined,
           compareSummary,
           model: selectedModel,
           projectContextDocument: projectContextDocument || undefined,
+          repoName: repoName || undefined,
         }),
       })
 

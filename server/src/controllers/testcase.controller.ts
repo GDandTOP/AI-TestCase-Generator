@@ -11,13 +11,14 @@ const testCaseService = new TestCaseService()
 const fileService = new FileService()
 
 export async function generateTestCases(req: Request, res: Response): Promise<void> {
-  const { diff, analysis, projectName, compareSummary, model, projectContextDocument } = req.body as {
+  const { diff, analysis, projectName, compareSummary, model, projectContextDocument, repoName } = req.body as {
     diff: GitDiffResult
     analysis: ImpactAnalysis
     projectName?: string
     compareSummary?: string
     model?: ClaudeModelId
     projectContextDocument?: string
+    repoName?: string
   }
 
   if (!diff || !analysis) {
@@ -33,7 +34,8 @@ export async function generateTestCases(req: Request, res: Response): Promise<vo
       projectName,
       compareSummary,
       model ?? DEFAULT_MODEL,
-      projectContextDocument
+      projectContextDocument,
+      repoName
     )
   } catch (error) {
     const friendly = toFriendlyClaudeError(error)

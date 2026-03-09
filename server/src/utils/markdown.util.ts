@@ -11,7 +11,8 @@ export function buildReportHeader(
   diff: GitDiffResult,
   analysis: ImpactAnalysis,
   projectName: string | undefined,
-  compareSummary: string
+  compareSummary: string,
+  repoName?: string
 ): string {
   const now = new Date()
   const dateStr = now.toLocaleString('ko-KR', {
@@ -34,8 +35,10 @@ export function buildReportHeader(
     .map((a) => `| ${a.name} | ${RISK_LABELS[a.risk] || a.risk} | ${a.description} |`)
     .join('\n')
 
-  // 문서 정보 표 맨 위: 프로젝트 정보(깃허브 레포지토리 이름)
-  const projectInfoRow = `| 프로젝트 정보 | ${projectName?.trim() || '미지정'} |\n`
+  // 프로젝트 정보: 사용자가 입력했으면 그대로, 비었거나 '미지정'이면 깃허브 레포 이름 사용
+  const hasUserInput = projectName?.trim() && projectName.trim() !== '미지정'
+  const projectInfoValue = hasUserInput ? projectName!.trim() : (repoName?.trim() || '미지정')
+  const projectInfoRow = `| 프로젝트 정보 | ${projectInfoValue} |\n`
 
   return `# 테스트케이스 보고서
 

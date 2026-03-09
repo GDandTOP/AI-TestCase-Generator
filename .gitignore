@@ -6,4 +6,5 @@ output/
 logs/
 *.md.map
 .DS_Store
-.cursor/
+# 예외: GitHub 푸시 시 .cursor 포함하려면 아래 주석 처리
+# .cursor/

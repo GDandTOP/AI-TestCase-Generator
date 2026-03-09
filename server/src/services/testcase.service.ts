@@ -19,10 +19,11 @@ export class TestCaseService {
     projectName?: string,
     compareSummary?: string,
     _model?: ClaudeModelId,
-    _projectContextDocument?: string
+    _projectContextDocument?: string,
+    repoName?: string
   ): Promise<void> {
     // 권고사항을 "3. 테스트케이스"에 넣은 완성 보고서를 한 번에 전송 (AI 호출 없음)
-    const header = buildReportHeader(diff, analysis, projectName, compareSummary || '')
+    const header = buildReportHeader(diff, analysis, projectName, compareSummary || '', repoName)
     const footer = buildReportFooter()
     const fullReport = header + footer
 
@@ -36,9 +37,10 @@ export class TestCaseService {
     diff: GitDiffResult,
     analysis: ImpactAnalysis,
     projectName?: string,
-    compareSummary?: string
+    compareSummary?: string,
+    repoName?: string
   ): Promise<string> {
-    const header = buildReportHeader(diff, analysis, projectName, compareSummary || '')
+    const header = buildReportHeader(diff, analysis, projectName, compareSummary || '', repoName)
     const footer = buildReportFooter()
     const fullContent = header + tcContent + footer
 
@@ -50,9 +52,10 @@ export class TestCaseService {
     diff: GitDiffResult,
     analysis: ImpactAnalysis,
     projectName?: string,
-    compareSummary?: string
+    compareSummary?: string,
+    repoName?: string
   ): Promise<string> {
-    const header = buildReportHeader(diff, analysis, projectName, compareSummary || '')
+    const header = buildReportHeader(diff, analysis, projectName, compareSummary || '', repoName)
     const footer = buildReportFooter()
     const fullMarkdown = header + tcContent + footer
 
