@@ -2,9 +2,19 @@ node_modules/
 dist/
 .env
 .env.*
+!.env.example
+!**/.env.example
 output/
 logs/
 *.md.map
 .DS_Store
-# 예외: GitHub 푸시 시 .cursor 포함하려면 아래 주석 처리
-# .cursor/
+.cursor/
+
+# 민감한 정보 파일
+CLAUDE.md
+API_KEY
+API_GUIDE
+bash.exe.stackdump
+
+# 프로젝트 컨텍스트 (내부 분석 파일)
+project_context/

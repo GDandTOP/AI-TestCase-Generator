@@ -17,63 +17,70 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; dot: string 
 export default function Analysis() {
   const {
     diffResult, impactAnalysis,
-    goToStep, setLoading, setError,
+    goToStep, setLoading, setLoadingProgress, setError,
     setTcContent, setHeaderContent, appendTcContent,
     repoPath, projectName, compareType,
     baseBranch, headBranch, baseCommit, headCommit, recentCount,
     selectedModel,
     projectContextDocument,
-    githubUrl,
   } = useAppStore()
 
   if (!diffResult || !impactAnalysis) return null
 
+  const { commits } = useAppStore()
+  const findMsg = (hash: string) =>
+    commits.find((c) => c.hash === hash)?.message?.slice(0, 40) ?? hash.slice(0, 7)
+
   const compareSummary =
     compareType === 'branch' ? `${baseBranch}...${headBranch}` :
-    compareType === 'commit' ? `${baseCommit}..${headCommit}` :
+    compareType === 'commit' ? `${findMsg(baseCommit)} → ${findMsg(headCommit)}` :
     `최근 ${recentCount}개 커밋`
 
   const risk = RISK_CONFIG[impactAnalysis.overallRisk]
 
   const handleGenerateTC = async () => {
-    setLoading(true, 'TC 생성 중...')
+    const tcLoadingMsg =
+      selectedModel === 'kt-ai-codi'
+        ? 'KT AI Codi로 테스트케이스 생성 중...'
+        : 'Claude AI로 테스트케이스 생성 중...'
+    console.log('[TestPlanner][TC 생성] ▶ 시작', { model: selectedModel, compareSummary })
+    setLoading(true, tcLoadingMsg)
+    setLoadingProgress(10)
     setError(null)
     setTcContent('')
     setHeaderContent('')
 
     try {
-      // 미지정일 때 쓸 레포 이름: GitHub URL에서 추출하거나 경로 마지막 폴더명
-      let repoName = ''
-      if (githubUrl?.trim()) {
-        try {
-          const pathParts = new URL(githubUrl).pathname.split('/').filter(Boolean)
-          repoName = (pathParts[pathParts.length - 1] || '').replace(/\.git$/i, '')
-        } catch { /* ignore */ }
-      }
-      if (!repoName && repoPath) repoName = repoPath.split('/').filter(Boolean).pop() || ''
-
+      console.log('[TestPlanner][TC 생성] 요청 전송 중...', {
+        projectName: projectName || repoPath.split('/').pop(),
+        compareSummary,
+        filesChanged: diffResult?.stats.filesChanged,
+        hasContext: !!projectContextDocument,
+      })
       const response = await fetch('/api/testcase/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           diff: diffResult,
           analysis: impactAnalysis,
-          projectName: projectName?.trim() || undefined,
+          projectName: projectName || repoPath.split('/').pop(),
           compareSummary,
           model: selectedModel,
           projectContextDocument: projectContextDocument || undefined,
-          repoName: repoName || undefined,
         }),
       })
 
       if (!response.ok || !response.body) throw new Error('TC 생성 요청 실패')
+      console.log('[TestPlanner][TC 생성] ✅ SSE 스트림 연결됨')
+      setLoadingProgress(20)
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let deltaCount = 0
+      let totalChars = 0
 
       goToStep(3)
-      setLoading(false)
 
       while (true) {
         const { done, value } = await reader.read()
@@ -82,18 +89,45 @@ export default function Analysis() {
         const lines = buffer.split('\n\n')
         buffer = lines.pop() || ''
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const json = JSON.parse(line.slice(6))
-              if (json.type === 'header') setHeaderContent(json.text)
-              else if (json.type === 'delta') appendTcContent(json.text)
-            } catch { /* ignore */ }
+          if (!line.startsWith('data: ')) continue
+          let json: { type?: string; text?: string; error?: string; usage?: unknown }
+          try {
+            json = JSON.parse(line.slice(6))
+          } catch {
+            continue
+          }
+          if (json.type === 'error') {
+            console.error('[TestPlanner][TC 생성] ❌ SSE 오류:', json.error)
+            throw new Error(json.error || 'TC 생성 중 오류')
+          }
+          if (json.type === 'header') {
+            console.log('[TestPlanner][TC 생성] 헤더 수신:', (json.text ?? '').length, '자')
+            setHeaderContent(json.text ?? '')
+            setLoadingProgress(30)
+          }
+          if (json.type === 'delta') {
+            deltaCount++
+            totalChars += (json.text ?? '').length
+            appendTcContent(json.text ?? '')
+            // 30% → 95% 점진적 진행률 업데이트
+            const progress = Math.min(30 + Math.floor(deltaCount / 2), 95)
+            setLoadingProgress(progress)
+            if (deltaCount % 20 === 0) {
+              console.log(`[TestPlanner][TC 생성] 스트리밍 중... 청크: ${deltaCount}개, 누적: ${totalChars}자`)
+            }
+          }
+          if (json.type === 'done') {
+            console.log('[TestPlanner][TC 생성] ✅ 완료:', { deltaCount, totalChars, usage: json.usage })
+            setLoadingProgress(100)
           }
         }
       }
     } catch (err) {
+      console.error('[TestPlanner][TC 생성] ❌ 오류:', err)
       setError(err instanceof Error ? err.message : 'TC 생성 실패')
+    } finally {
       setLoading(false)
+      setLoadingProgress(0)
     }
   }
 

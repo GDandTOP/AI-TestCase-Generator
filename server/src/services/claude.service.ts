@@ -3,6 +3,7 @@ import { env } from '../config/env'
 import { GitDiffResult, ImpactAnalysis } from '../types'
 import { buildImpactAnalysisPrompt, buildTestCasePrompt } from '../utils/prompt.util'
 import { saveImpactPayload, saveTestcasePayload } from '../utils/log-payload.util'
+import { extractJsonFromLlmResponse } from '../utils/json-extract.util'
 import { Response } from 'express'
 
 export const CLAUDE_MODELS = [
@@ -30,22 +31,39 @@ export const CLAUDE_MODELS = [
     description: '최고 품질',
     badge: '최고급',
   },
+  {
+    id: 'kt-ai-codi',
+    name: 'KT AI Codi',
+    inputPrice: 0,
+    outputPrice: 0,
+    description: 'KT Codi 앱 API',
+    badge: 'KT',
+  },
 ] as const
 
 export type ClaudeModelId = (typeof CLAUDE_MODELS)[number]['id']
 
+/** Anthropic API에 실제로 넘기는 Claude 모델 ID만 */
+export type ClaudeAnthropicModelId = Exclude<ClaudeModelId, 'kt-ai-codi'>
+
 export const DEFAULT_MODEL: ClaudeModelId = 'claude-haiku-4-5-20251001'
 
 export class ClaudeService {
-  private client: Anthropic
+  private client: Anthropic | null = null
 
-  constructor() {
-    this.client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
+  /** Claude 전용 API 키가 있을 때만 클라이언트를 만듭니다 (Codi만 쓰는 경우 키 없음). */
+  private getClient(): Anthropic {
+    const key = env.ANTHROPIC_API_KEY?.trim()
+    if (!key) {
+      throw new Error('Claude 모델을 사용하려면 server/.env에 ANTHROPIC_API_KEY를 설정해 주세요.')
+    }
+    if (!this.client) this.client = new Anthropic({ apiKey: key })
+    return this.client
   }
 
   async analyzeImpact(
     diff: GitDiffResult,
-    model: ClaudeModelId = DEFAULT_MODEL,
+    model: ClaudeAnthropicModelId = 'claude-haiku-4-5-20251001',
     projectContextDocument?: string
   ): Promise<ImpactAnalysis> {
     const prompt = buildImpactAnalysisPrompt(diff, projectContextDocument)
@@ -56,7 +74,7 @@ export class ClaudeService {
       console.log('[Log] 영향도 분석 payload 저장:', logPath)
     }
 
-    const message = await this.client.messages.create({
+    const message = await this.getClient().messages.create({
       model,
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
@@ -68,13 +86,20 @@ export class ClaudeService {
     }
 
     try {
-      // JSON 블록이 있는 경우 추출
-      const jsonMatch = content.text.match(/```json\s*([\s\S]*?)\s*```/) ||
-        content.text.match(/\{[\s\S]*\}/)
-      const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : content.text
-      return JSON.parse(jsonStr) as ImpactAnalysis
+      console.log('[Claude] 영향도 분석 응답 수신, 길이:', content.text.length)
+      const jsonStr = extractJsonFromLlmResponse(content.text)
+      const result = JSON.parse(jsonStr) as ImpactAnalysis
+      console.log('[Claude] 영향도 분석 파싱 성공:', { overallRisk: result.overallRisk, areas: result.affectedAreas?.length })
+      return result
     } catch {
-      throw new Error(`영향도 분석 결과 파싱 실패: ${content.text.slice(0, 200)}`)
+      console.warn('[Claude] 영향도 분석 파싱 실패, 기본값으로 대체. 원본 앞부분:', content.text.slice(0, 300))
+      // 파싱 실패 시 에러를 던지지 않고 기본값 반환 (TC 생성은 계속 진행)
+      return {
+        overallRisk: 'medium',
+        summary: content.text.slice(0, 500) || '영향도 분석 결과를 파싱할 수 없었습니다.',
+        affectedAreas: [],
+        recommendations: ['변경사항을 직접 확인하여 테스트 범위를 결정하세요.'],
+      }
     }
   }
 
@@ -83,7 +108,7 @@ export class ClaudeService {
     analysis: ImpactAnalysis,
     res: Response,
     projectName?: string,
-    model: ClaudeModelId = DEFAULT_MODEL,
+    model: ClaudeAnthropicModelId = 'claude-haiku-4-5-20251001',
     projectContextDocument?: string
   ): Promise<void> {
     const prompt = buildTestCasePrompt(diff, analysis, projectName, projectContextDocument)
@@ -105,7 +130,7 @@ export class ClaudeService {
     const systemInstruction = `You are a QA engineer writing test cases in Markdown. Your response will be inserted directly under the heading "## 3. 테스트케이스" in a report. Do NOT write "## 3. 테스트케이스" again. Start your response immediately with "### TC-001:" and write at least 5 full test cases (### TC-001 through ### TC-005 or more). End with "## 테스트 실행 체크리스트" and list items. Never output an empty section or only a title.`
 
     try {
-      const stream = await this.client.messages.stream({
+      const stream = await this.getClient().messages.stream({
         model,
         max_tokens: 8192,
         system: systemInstruction,

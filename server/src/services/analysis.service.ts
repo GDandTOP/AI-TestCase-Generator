@@ -1,11 +1,19 @@
-import { ClaudeService, ClaudeModelId, DEFAULT_MODEL } from './claude.service'
+import {
+  ClaudeService,
+  ClaudeModelId,
+  ClaudeAnthropicModelId,
+  DEFAULT_MODEL,
+} from './claude.service'
+import { KtCodiService, isKtAiCodiModel } from './kt-codi.service'
 import { GitDiffResult, ImpactAnalysis } from '../types'
 
 export class AnalysisService {
   private claudeService: ClaudeService
+  private ktCodiService: KtCodiService
 
   constructor() {
     this.claudeService = new ClaudeService()
+    this.ktCodiService = new KtCodiService()
   }
 
   async analyzeImpact(
@@ -22,6 +30,14 @@ export class AnalysisService {
       }
     }
 
-    return this.claudeService.analyzeImpact(diff, model, projectContextDocument)
+    if (isKtAiCodiModel(model)) {
+      return this.ktCodiService.analyzeImpact(diff, projectContextDocument)
+    }
+
+    return this.claudeService.analyzeImpact(
+      diff,
+      model as ClaudeAnthropicModelId,
+      projectContextDocument
+    )
   }
 }

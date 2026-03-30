@@ -39,7 +39,11 @@ export interface CommitInfo {
   date: string
 }
 
-export type ClaudeModelId = 'claude-haiku-4-5-20251001' | 'claude-sonnet-4-6' | 'claude-opus-4-6'
+export type ClaudeModelId =
+  | 'claude-haiku-4-5-20251001'
+  | 'claude-sonnet-4-6'
+  | 'claude-opus-4-6'
+  | 'kt-ai-codi'
 
 export interface ClaudeModel {
   id: ClaudeModelId
@@ -74,6 +78,14 @@ export const CLAUDE_MODELS: ClaudeModel[] = [
     outputPrice: 75,
     description: '최고 품질',
     badge: '최고급',
+  },
+  {
+    id: 'kt-ai-codi',
+    name: 'KT AI Codi',
+    inputPrice: 0,
+    outputPrice: 0,
+    description: 'KT Codi 앱 API',
+    badge: 'KT',
   },
 ]
 
@@ -110,6 +122,7 @@ interface AppState {
   // 로딩/에러 상태
   isLoading: boolean
   loadingMessage: string
+  loadingProgress: number  // 0-100
   error: string | null
 
   // Actions
@@ -133,6 +146,7 @@ interface AppState {
   setTcContent: (content: string) => void
   setSavedFilename: (filename: string) => void
   setLoading: (loading: boolean, message?: string) => void
+  setLoadingProgress: (progress: number) => void
   setError: (error: string | null) => void
   goToStep: (step: Step) => void
   reset: () => void
@@ -161,6 +175,7 @@ const initialState = {
   savedFilename: null,
   isLoading: false,
   loadingMessage: '',
+  loadingProgress: 0,
   error: null,
 }
 
@@ -187,6 +202,7 @@ export const useAppStore = create<AppState>((set) => ({
   setTcContent: (content) => set({ tcContent: content }),
   setSavedFilename: (filename) => set({ savedFilename: filename }),
   setLoading: (loading, message = '') => set({ isLoading: loading, loadingMessage: message }),
+  setLoadingProgress: (progress) => set({ loadingProgress: progress }),
   setError: (error) => set({ error }),
   goToStep: (step) => set({ currentStep: step, error: null }),
   reset: () => set(initialState),

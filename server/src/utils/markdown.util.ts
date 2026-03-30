@@ -11,8 +11,7 @@ export function buildReportHeader(
   diff: GitDiffResult,
   analysis: ImpactAnalysis,
   projectName: string | undefined,
-  compareSummary: string,
-  repoName?: string
+  compareSummary: string
 ): string {
   const now = new Date()
   const dateStr = now.toLocaleString('ko-KR', {
@@ -35,10 +34,8 @@ export function buildReportHeader(
     .map((a) => `| ${a.name} | ${RISK_LABELS[a.risk] || a.risk} | ${a.description} |`)
     .join('\n')
 
-  // 프로젝트 정보: 사용자가 입력했으면 그대로, 비었거나 '미지정'이면 깃허브 레포 이름 사용
-  const hasUserInput = projectName?.trim() && projectName.trim() !== '미지정'
-  const projectInfoValue = hasUserInput ? projectName!.trim() : (repoName?.trim() || '미지정')
-  const projectInfoRow = `| 프로젝트 정보 | ${projectInfoValue} |\n`
+  // 문서 정보 표 맨 위: 프로젝트 정보(깃허브 레포지토리 이름)
+  const projectInfoRow = `| 프로젝트 정보 | ${projectName?.trim() || '미지정'} |\n`
 
   return `# 테스트케이스 보고서
 
@@ -79,6 +76,80 @@ ${affectedAreas}
 ## 3. 테스트케이스
 
 ${analysis.recommendations.map((r, i) => `${i + 1}. ${r}`).join('\n\n')}
+
+`
+}
+
+/**
+ * AI가 "## 3. 테스트케이스" 본문만 스트리밍할 때 사용합니다.
+ * (권고 목록 없이 제목만 두고, 이후 delta로 TC 마크다운을 붙입니다.)
+ */
+export function buildReportHeaderBeforeAiTc(
+  diff: GitDiffResult,
+  analysis: ImpactAnalysis,
+  projectName: string | undefined,
+  compareSummary: string
+): string {
+  const now = new Date()
+  const dateStr = now.toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+
+  const fileStats = diff.files
+    .map((f) => {
+      const statusIcon = { added: '🟢', modified: '🟡', deleted: '🔴', renamed: '🔵' }[f.status] || '⚪'
+      return `| ${statusIcon} ${f.path} | ${f.status} | +${f.insertions} | -${f.deletions} |`
+    })
+    .join('\n')
+
+  const affectedAreas = analysis.affectedAreas
+    .map((a) => `| ${a.name} | ${RISK_LABELS[a.risk] || a.risk} | ${a.description} |`)
+    .join('\n')
+
+  const projectInfoRow = `| 프로젝트 정보 | ${projectName?.trim() || '미지정'} |\n`
+
+  return `# 테스트케이스 보고서
+
+## 문서 정보
+| 항목 | 내용 |
+|------|------|
+${projectInfoRow}| 생성 일시 | ${dateStr} |
+| 분석 기준 | ${compareSummary || '알 수 없음'} |
+| 전체 위험도 | ${RISK_LABELS[analysis.overallRisk] || analysis.overallRisk} |
+
+---
+
+## 1. 변경사항 요약
+
+### 파일 변경 통계
+- 변경된 파일 수: **${diff.stats.filesChanged}개**
+- 추가된 라인: **+${diff.stats.insertions}**
+- 삭제된 라인: **-${diff.stats.deletions}**
+
+### 변경 파일 목록
+| 파일 경로 | 상태 | 추가 | 삭제 |
+|-----------|------|------|------|
+${fileStats}
+
+---
+
+## 2. 영향도 분석
+
+**요약**: ${analysis.summary}
+
+### 영향 받는 기능 영역
+| 기능 영역 | 위험도 | 설명 |
+|-----------|--------|------|
+${affectedAreas}
+
+---
+
+## 3. 테스트케이스
 
 `
 }

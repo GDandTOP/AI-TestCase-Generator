@@ -1,23 +1,63 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useAppStore } from '../../store/useAppStore'
 import { downloadMarkdownToUser, downloadPdfToUser } from '../../api/client'
+
+const PDF_STEPS: { upTo: number; message: string }[] = [
+  { upTo: 8,  message: 'PDF 변환 준비 중...' },
+  { upTo: 28, message: '마크다운 → HTML 변환 중...' },
+  { upTo: 52, message: 'Chrome으로 페이지 렌더링 중...' },
+  { upTo: 74, message: 'A4 레이아웃 · 폰트 처리 중...' },
+  { upTo: 90, message: 'PDF 파일 최종 생성 중...' },
+  { upTo: 99, message: '다운로드 준비 완료 직전...' },
+]
+
+function getPdfStepMessage(progress: number) {
+  return PDF_STEPS.find((s) => progress <= s.upTo)?.message ?? 'PDF 완성!'
+}
 
 export default function TestCase() {
   const store = useAppStore()
   const [isSaving, setIsSaving] = useState(false)
   const [isSavingPdf, setIsSavingPdf] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [pdfProgress, setPdfProgress] = useState(0)
+  const pdfTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fullContent = store.headerContent + store.tcContent
-  const isStreaming = store.isLoading
+  const isStreaming = store.isLoading && !isSaving && !isSavingPdf
+
+  const findMsg = (hash: string) =>
+    store.commits.find((c) => c.hash === hash)?.message?.slice(0, 40) ?? hash.slice(0, 7)
 
   const compareSummary =
     store.compareType === 'branch' ? `${store.baseBranch}...${store.headBranch}` :
-    store.compareType === 'commit' ? `${store.baseCommit}..${store.headCommit}` :
+    store.compareType === 'commit' ? `${findMsg(store.baseCommit)} → ${findMsg(store.headCommit)}` :
     `최근 ${store.recentCount}개 커밋`
 
-  /** MD 파일을 서버 저장 없이 사용자 PC로 바로 다운로드 (경로는 브라우저 "다른 이름으로 저장"에서 지정) */
+  /* PDF 진행률 타이머 */
+  useEffect(() => {
+    if (isSavingPdf) {
+      setPdfProgress(0)
+      pdfTimerRef.current = setInterval(() => {
+        setPdfProgress((prev) => {
+          if (prev >= 93) return prev  // 완료 직전에서 멈춤 (실제 완료 시 100으로)
+          const step = prev < 30 ? 3 : prev < 60 ? 2 : 1
+          return Math.min(prev + step, 93)
+        })
+      }, 800)
+    } else {
+      if (pdfTimerRef.current) {
+        clearInterval(pdfTimerRef.current)
+        pdfTimerRef.current = null
+      }
+      setPdfProgress(0)
+    }
+    return () => {
+      if (pdfTimerRef.current) clearInterval(pdfTimerRef.current)
+    }
+  }, [isSavingPdf])
+
   const handleSave = async () => {
     if (!fullContent?.trim()) {
       store.setError('저장할 테스트케이스 내용이 없습니다')
@@ -34,7 +74,6 @@ export default function TestCase() {
     }
   }
 
-  /** PDF를 서버 저장 없이 사용자 PC로 바로 다운로드 (경로는 브라우저 "다른 이름으로 저장"에서 지정) */
   const handleSavePdf = async () => {
     if (!fullContent?.trim()) {
       store.setError('저장할 테스트케이스 내용이 없습니다')
@@ -44,6 +83,8 @@ export default function TestCase() {
     store.setError(null)
     try {
       await downloadPdfToUser(fullContent, compareSummary)
+      setPdfProgress(100)
+      await new Promise((r) => setTimeout(r, 400))
     } catch (err) {
       store.setError(err instanceof Error ? err.message : 'PDF 다운로드 실패')
     } finally {
@@ -77,20 +118,100 @@ export default function TestCase() {
         </button>
       </div>
 
-      {/* AI 스트리밍 상태 */}
+      {/* AI 스트리밍 진행 상태 */}
       {isStreaming && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-100 rounded-apple text-[13px] text-apple-blue animate-fade-in">
-          {/* 점 3개 애니메이션 */}
-          <div className="flex gap-1">
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="w-1.5 h-1.5 bg-apple-blue rounded-full animate-pulse-dot"
-                style={{ animationDelay: `${i * 0.2}s` }}
-              />
+        <div className="rounded-apple-lg border border-blue-100 bg-blue-50 p-4 space-y-3 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="flex gap-1">
+                {[0, 1, 2].map((i) => (
+                  <div
+                    key={i}
+                    className="w-1.5 h-1.5 bg-apple-blue rounded-full animate-pulse-dot"
+                    style={{ animationDelay: `${i * 0.2}s` }}
+                  />
+                ))}
+              </div>
+              <span className="text-[13px] font-semibold text-apple-blue">AI가 테스트케이스를 생성하고 있습니다</span>
+            </div>
+          </div>
+          {/* indeterminate 진행바 */}
+          <div className="h-1.5 bg-blue-100 rounded-full overflow-hidden">
+            <div className="h-full bg-apple-blue rounded-full animate-[indeterminate_1.6s_ease-in-out_infinite]"
+              style={{ width: '40%', animation: 'indeterminate 1.6s ease-in-out infinite' }}
+            />
+          </div>
+          <style>{`
+            @keyframes indeterminate {
+              0%   { transform: translateX(-100%); }
+              100% { transform: translateX(350%); }
+            }
+          `}</style>
+          <p className="text-[11px] text-apple-secondary">생성이 완료되면 아래 미리보기에 표시됩니다</p>
+        </div>
+      )}
+
+      {/* PDF 저장 진행 상태 */}
+      {isSavingPdf && (
+        <div className="rounded-apple-lg border border-[#0071e3]/20 bg-[#f0f7ff] p-5 space-y-3 animate-fade-in">
+          {/* 상단: 타이틀 + 퍼센트 */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-[#0071e3] animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              <span className="text-[13px] font-semibold text-[#0071e3]">PDF 변환 중</span>
+            </div>
+            <span className="text-[14px] font-mono font-bold text-[#0071e3] tabular-nums">
+              {pdfProgress < 100 ? `${pdfProgress}%` : '완료!'}
+            </span>
+          </div>
+
+          {/* 진행바 */}
+          <div className="h-2 bg-[#dbeafe] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-[#0071e3] rounded-full transition-all duration-700 ease-out"
+              style={{ width: `${pdfProgress}%` }}
+            />
+          </div>
+
+          {/* 단계 메시지 */}
+          <div className="flex items-center gap-2">
+            <div className="w-1 h-1 rounded-full bg-[#0071e3] opacity-60" />
+            <p className="text-[12px] text-[#1d4ed8] font-medium">
+              {pdfProgress < 100 ? getPdfStepMessage(pdfProgress) : '다운로드를 시작합니다...'}
+            </p>
+          </div>
+
+          {/* 단계 스텝 도트 */}
+          <div className="flex items-center gap-1.5 pt-0.5">
+            {PDF_STEPS.map((step, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <div className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
+                  pdfProgress > (PDF_STEPS[i - 1]?.upTo ?? 0)
+                    ? 'bg-[#0071e3]'
+                    : 'bg-[#bfdbfe]'
+                }`} />
+                {i < PDF_STEPS.length - 1 && (
+                  <div className={`h-px w-4 transition-all duration-500 ${
+                    pdfProgress > step.upTo ? 'bg-[#0071e3]' : 'bg-[#bfdbfe]'
+                  }`} />
+                )}
+              </div>
             ))}
           </div>
-          <span>AI가 테스트케이스를 생성하고 있습니다...</span>
+        </div>
+      )}
+
+      {/* MD 저장 진행 상태 */}
+      {isSaving && (
+        <div className="flex items-center gap-3 rounded-apple border border-[rgba(0,0,0,0.06)] bg-[#f5f5f7] px-4 py-3 animate-fade-in">
+          <svg className="w-4 h-4 text-apple-secondary animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+          <span className="text-[13px] text-apple-secondary font-medium">마크다운 파일 저장 중...</span>
         </div>
       )}
 
@@ -146,7 +267,6 @@ export default function TestCase() {
       {/* 액션 버튼 */}
       {fullContent && !isStreaming && (
         <div className="space-y-2 animate-fade-in">
-          {/* MD + PDF 저장 버튼 */}
           <div className="flex gap-2">
             <button
               onClick={handleSave}
@@ -182,7 +302,7 @@ export default function TestCase() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                   </svg>
-                  PDF 생성 중...
+                  {pdfProgress}% 변환 중...
                 </>
               ) : (
                 <>
@@ -194,7 +314,6 @@ export default function TestCase() {
               )}
             </button>
           </div>
-
         </div>
       )}
 

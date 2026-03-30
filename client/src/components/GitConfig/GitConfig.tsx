@@ -2,10 +2,29 @@ import { useState } from 'react'
 import { useAppStore, GitDiffResult, ImpactAnalysis, CLAUDE_MODELS } from '../../store/useAppStore'
 import { validateRepo, getBranches, getDiff, analyzeImpact, cloneRepo, openFolderDialog } from '../../api/client'
 
+const REPO_STEPS = [
+  { upTo: 25, message: '저장소 경로 확인 중...' },
+  { upTo: 65, message: '브랜치 목록 불러오는 중...' },
+  { upTo: 95, message: '프로젝트 구조 분석 중...' },
+  { upTo: 99, message: '거의 완료...' },
+]
+
+const ANALYZE_STEPS = [
+  { upTo: 15, message: 'Git diff 추출 중...' },
+  { upTo: 45, message: '변경 파일 파싱 중...' },
+  { upTo: 80, message: 'AI로 영향도 분석 중...' },
+  { upTo: 99, message: '분석 결과 처리 중...' },
+]
+
+function getStepMessage(steps: typeof REPO_STEPS, progress: number) {
+  return steps.find((s) => progress <= s.upTo)?.message ?? '완료!'
+}
+
 const BADGE_STYLE: Record<string, string> = {
   '추천':   'bg-emerald-50 text-emerald-600 border border-emerald-100',
   '최저가': 'bg-sky-50 text-sky-600 border border-sky-100',
   '최고급': 'bg-purple-50 text-purple-600 border border-purple-100',
+  KT:     'bg-orange-50 text-orange-700 border border-orange-100',
 }
 
 export default function GitConfig() {
@@ -14,6 +33,7 @@ export default function GitConfig() {
   // GitHub URL 입력값 (로컬 상태로 관리)
   const [githubUrlInput, setGithubUrlInput] = useState(store.githubUrl)
   const [isValidating, setIsValidating] = useState(false)
+  const [isOpeningFolder, setIsOpeningFolder] = useState(false)
   // GitHub 클론 진행 단계 메시지
   const [cloneStatus, setCloneStatus] = useState('')
 
@@ -25,22 +45,33 @@ export default function GitConfig() {
       store.setError('저장소 경로를 입력해주세요')
       return
     }
+    console.log('[TestPlanner][저장소 검증] ▶ 시작:', repoPathInput)
     setIsValidating(true)
     store.setError(null)
+    store.setLoading(true, '저장소 경로 확인 중...')
+    store.setLoadingProgress(20)
     try {
       await validateRepo(repoPathInput)
+      console.log('[TestPlanner][저장소 검증] ✅ 경로 유효')
       store.setRepoPath(repoPathInput)
+      store.setLoading(true, '브랜치 목록 불러오는 중...')
+      store.setLoadingProgress(60)
       const { all, commits, projectContextDocument } = await getBranches(repoPathInput)
+      console.log('[TestPlanner][브랜치 로드] ✅ 완료:', { branches: all.length, commits: commits.length, hasContext: !!projectContextDocument })
       store.setBranches(all, commits)
       store.setProjectContextDocument(projectContextDocument ?? '')
+      store.setLoadingProgress(100)
       if (all.length >= 2) {
         store.setBaseBranch(all[0])
         store.setHeadBranch(all[1])
       }
     } catch (err) {
+      console.error('[TestPlanner][저장소 검증] ❌ 오류:', err)
       store.setError(err instanceof Error ? err.message : '저장소 검증 실패')
     } finally {
       setIsValidating(false)
+      store.setLoading(false)
+      store.setLoadingProgress(0)
     }
   }
 
@@ -53,27 +84,50 @@ export default function GitConfig() {
       store.setError('GitHub URL을 입력해주세요')
       return
     }
+    console.log('[TestPlanner][GitHub 클론] ▶ 시작:', githubUrlInput)
     setIsValidating(true)
     setCloneStatus('GitHub 저장소 클론 중...')
     store.setError(null)
     store.setGithubUrl(githubUrlInput)
+    store.setLoading(true, 'GitHub 저장소 클론 중...')
+    store.setLoadingProgress(15)
     try {
       // GitHub URL을 서버에 전달해서 임시 경로에 클론
       const localPath = await cloneRepo(githubUrlInput)
+      console.log('[TestPlanner][GitHub 클론] ✅ 완료:', localPath)
       store.setRepoPath(localPath)
+      // GitHub URL에서 레포지토리명 자동 추출 (예: https://github.com/user/repo → user/repo)
+      try {
+        const urlObj = new URL(githubUrlInput.trim())
+        const parts = urlObj.pathname.replace(/\.git$/, '').split('/').filter(Boolean)
+        if (parts.length >= 2) {
+          store.setProjectName(`${parts[parts.length - 2]}/${parts[parts.length - 1]}`)
+        } else if (parts.length === 1) {
+          store.setProjectName(parts[0])
+        }
+      } catch {
+        // URL 파싱 실패 시 무시
+      }
       setCloneStatus('브랜치 목록 불러오는 중...')
+      store.setLoading(true, '브랜치 목록 불러오는 중...')
+      store.setLoadingProgress(70)
       const { all, commits, projectContextDocument } = await getBranches(localPath)
+      console.log('[TestPlanner][브랜치 로드] ✅ 완료:', { branches: all.length, commits: commits.length, hasContext: !!projectContextDocument })
       store.setBranches(all, commits)
       store.setProjectContextDocument(projectContextDocument ?? '')
+      store.setLoadingProgress(100)
       if (all.length >= 2) {
         store.setBaseBranch(all[0])
         store.setHeadBranch(all[1])
       }
     } catch (err) {
+      console.error('[TestPlanner][GitHub 클론] ❌ 오류:', err)
       store.setError(err instanceof Error ? err.message : 'GitHub 저장소 클론 실패')
     } finally {
       setIsValidating(false)
       setCloneStatus('')
+      store.setLoading(false)
+      store.setLoadingProgress(0)
     }
   }
 
@@ -82,19 +136,30 @@ export default function GitConfig() {
    * 선택된 경로를 경로 입력란에 자동으로 채워넣습니다.
    */
   const handleOpenFolder = async () => {
+    setIsOpeningFolder(true)
     try {
       const selectedPath = await openFolderDialog()
-      // 사용자가 다이얼로그에서 취소를 누르면 null 반환 → 아무 것도 하지 않음
       if (selectedPath) {
         setRepoPathInput(selectedPath)
       }
     } catch (err) {
       store.setError(err instanceof Error ? err.message : '폴더 선택에 실패했습니다')
+    } finally {
+      setIsOpeningFolder(false)
     }
   }
 
   const handleAnalyze = async () => {
+    console.log('[TestPlanner][분석] ▶ 시작', {
+      repoPath: store.repoPath,
+      compareType: store.compareType,
+      model: store.selectedModel,
+      ...(store.compareType === 'branch' && { base: store.baseBranch, head: store.headBranch }),
+      ...(store.compareType === 'commit' && { base: store.baseCommit, head: store.headCommit }),
+      ...(store.compareType === 'recent' && { count: store.recentCount }),
+    })
     store.setLoading(true, 'diff 추출 중...')
+    store.setLoadingProgress(5)
     store.setError(null)
     try {
       const diffPayload: {
@@ -115,18 +180,43 @@ export default function GitConfig() {
         diffPayload.count = store.recentCount
       }
 
-      const diff = await getDiff(diffPayload)
-      store.setDiffResult(diff as GitDiffResult)
+      console.log('[TestPlanner][diff] 요청:', diffPayload)
+      store.setLoadingProgress(15)
 
-      store.setLoading(true, 'Claude AI로 영향도 분석 중...')
+      const diff = await getDiff(diffPayload)
+      console.log('[TestPlanner][diff] ✅ 완료:', {
+        filesChanged: (diff as GitDiffResult).stats.filesChanged,
+        insertions: (diff as GitDiffResult).stats.insertions,
+        deletions: (diff as GitDiffResult).stats.deletions,
+        files: (diff as GitDiffResult).files.map(f => `${f.status}: ${f.path}`),
+      })
+      store.setDiffResult(diff as GitDiffResult)
+      store.setLoadingProgress(40)
+
+      const impactMsg =
+        store.selectedModel === 'kt-ai-codi'
+          ? 'KT AI Codi로 영향도 분석 중...'
+          : 'Claude AI로 영향도 분석 중...'
+      store.setLoading(true, impactMsg)
+      store.setLoadingProgress(50)
+      console.log('[TestPlanner][영향도 분석] 요청 중...')
+
       const analysis = await analyzeImpact(diff, store.selectedModel, store.projectContextDocument)
+      console.log('[TestPlanner][영향도 분석] ✅ 완료:', {
+        overallRisk: (analysis as ImpactAnalysis).overallRisk,
+        affectedAreas: (analysis as ImpactAnalysis).affectedAreas?.length,
+        summary: (analysis as ImpactAnalysis).summary,
+      })
       store.setImpactAnalysis(analysis as ImpactAnalysis)
+      store.setLoadingProgress(100)
 
       store.goToStep(2)
     } catch (err) {
+      console.error('[TestPlanner][분석] ❌ 오류:', err)
       store.setError(err instanceof Error ? err.message : '분석 실패')
     } finally {
       store.setLoading(false)
+      store.setLoadingProgress(0)
     }
   }
 
@@ -224,22 +314,33 @@ export default function GitConfig() {
             <button
               type="button"
               onClick={handleOpenFolder}
-              disabled={isValidating}
+              disabled={isValidating || isOpeningFolder}
               title="Finder에서 폴더를 선택합니다"
               className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2.5 py-1.5 rounded-[6px] text-[12px] font-medium text-apple-secondary bg-[rgba(0,0,0,0.05)] hover:bg-[rgba(0,0,0,0.09)] active:scale-95 disabled:opacity-40 transition-all duration-150 whitespace-nowrap"
             >
-              {/* 업로드/열기 아이콘 */}
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-              </svg>
-              폴더 선택
+              {isOpeningFolder ? (
+                <>
+                  <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  선택 중
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                  </svg>
+                  폴더 선택
+                </>
+              )}
             </button>
           </div>
 
           {/* 저장소 확인 버튼 (하단 전체 너비) */}
           <button
             onClick={handleValidate}
-            disabled={isValidating}
+            disabled={isValidating || isOpeningFolder}
             className="w-full py-2.5 bg-apple-blue text-white rounded-apple text-[13px] font-semibold hover:bg-apple-blue-dark active:scale-[0.99] disabled:opacity-50 transition-all duration-150 flex items-center justify-center gap-1.5"
           >
             {isValidating
@@ -301,7 +402,7 @@ export default function GitConfig() {
       {/* AI 모델 선택 */}
       <div className="space-y-2.5">
         <label className="block text-[13px] font-semibold text-apple-text">AI Agent Model 선택</label>
-        <div className="grid grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
           {CLAUDE_MODELS.map((m) => {
             const isSelected = store.selectedModel === m.id
             const estimatedCost = ((3000 * m.inputPrice + 2000 * m.outputPrice) / 1_000_000).toFixed(3)
@@ -475,6 +576,108 @@ export default function GitConfig() {
               </>
             )}
           </button>
+        </div>
+      )}
+
+      {/* 저장소 로딩 진행 UI */}
+      {isValidating && store.isLoading && (
+        <div className="rounded-apple-lg border border-[#0071e3]/20 bg-[#f0f7ff] p-5 space-y-3 animate-fade-in">
+          {/* 상단: 타이틀 + 퍼센트 */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-[#0071e3] animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              <span className="text-[13px] font-semibold text-[#0071e3]">저장소 연결 중</span>
+            </div>
+            <span className="text-[14px] font-mono font-bold text-[#0071e3] tabular-nums">
+              {store.loadingProgress}%
+            </span>
+          </div>
+
+          {/* 진행바 */}
+          <div className="h-2 bg-[#dbeafe] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-[#0071e3] rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${Math.max(store.loadingProgress, 6)}%` }}
+            />
+          </div>
+
+          {/* 단계 메시지 */}
+          <div className="flex items-center gap-2">
+            <div className="w-1 h-1 rounded-full bg-[#0071e3] opacity-60" />
+            <p className="text-[12px] text-[#1d4ed8] font-medium">
+              {store.loadingMessage || getStepMessage(REPO_STEPS, store.loadingProgress)}
+            </p>
+          </div>
+
+          {/* 스텝 도트 */}
+          <div className="flex items-center gap-1.5 pt-0.5">
+            {REPO_STEPS.map((step, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <div className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
+                  store.loadingProgress > (REPO_STEPS[i - 1]?.upTo ?? 0)
+                    ? 'bg-[#0071e3]'
+                    : 'bg-[#bfdbfe]'
+                }`} />
+                {i < REPO_STEPS.length - 1 && (
+                  <div className={`h-px w-5 transition-all duration-500 ${
+                    store.loadingProgress > step.upTo ? 'bg-[#0071e3]' : 'bg-[#bfdbfe]'
+                  }`} />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 분석 진행 UI (handleAnalyze 중) */}
+      {!isValidating && store.isLoading && (
+        <div className="rounded-apple-lg border border-[rgba(0,0,0,0.07)] bg-[#f5f5f7] p-5 space-y-3 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-apple-text animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              <span className="text-[13px] font-semibold text-apple-text">분석 진행 중</span>
+            </div>
+            <span className="text-[14px] font-mono font-bold text-apple-text tabular-nums">
+              {store.loadingProgress}%
+            </span>
+          </div>
+
+          <div className="h-2 bg-[rgba(0,0,0,0.08)] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-apple-text rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${Math.max(store.loadingProgress, 4)}%` }}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="w-1 h-1 rounded-full bg-apple-text opacity-40" />
+            <p className="text-[12px] text-apple-secondary font-medium">
+              {store.loadingMessage || getStepMessage(ANALYZE_STEPS, store.loadingProgress)}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1.5 pt-0.5">
+            {ANALYZE_STEPS.map((step, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <div className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
+                  store.loadingProgress > (ANALYZE_STEPS[i - 1]?.upTo ?? 0)
+                    ? 'bg-apple-text'
+                    : 'bg-[rgba(0,0,0,0.12)]'
+                }`} />
+                {i < ANALYZE_STEPS.length - 1 && (
+                  <div className={`h-px w-5 transition-all duration-500 ${
+                    store.loadingProgress > step.upTo ? 'bg-apple-text' : 'bg-[rgba(0,0,0,0.1)]'
+                  }`} />
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

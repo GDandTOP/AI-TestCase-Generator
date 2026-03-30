@@ -6,9 +6,30 @@ const apiClient = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+// 요청 로그
+apiClient.interceptors.request.use((config) => {
+  const body = config.data
+  const preview = body ? JSON.stringify(body).slice(0, 200) : ''
+  console.log(`[API] → ${config.method?.toUpperCase()} ${config.url}`, preview ? { body: preview } : '')
+  return config
+})
+
+// 응답 로그
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`[API] ✅ ← ${response.config.method?.toUpperCase()} ${response.config.url} ${response.status}`, {
+      success: response.data?.success,
+      data: JSON.stringify(response.data).slice(0, 300),
+    })
+    return response
+  },
   (error) => {
+    console.error(`[API] ❌ ← ${error.config?.method?.toUpperCase()} ${error.config?.url}`, {
+      status: error.response?.status,
+      error: error.response?.data?.error,
+      message: error.message,
+      stack: error.stack?.split('\n')[1]?.trim(),
+    })
     const message = error.response?.data?.error || error.message || '알 수 없는 오류가 발생했습니다'
     return Promise.reject(new Error(message))
   }

@@ -9,6 +9,7 @@ const STEPS = [
   { number: 3, label: '테스트케이스 산출' },
 ]
 
+
 function StepIndicator() {
   const { currentStep } = useAppStore()
 
@@ -56,6 +57,7 @@ function StepIndicator() {
 
 export default function App() {
   const { currentStep } = useAppStore()
+  const store = useAppStore()
 
   return (
     <div className="min-h-screen bg-apple-bg font-sans">
@@ -63,14 +65,17 @@ export default function App() {
       {/* 헤더 — 프로스티드 글래스 */}
       <header className="sticky top-0 z-50 bg-white/[0.82] backdrop-blur-apple border-b border-[rgba(0,0,0,0.08)]">
         <div className="max-w-2xl mx-auto px-6 h-[52px] flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => store.reset()}
+            className="flex items-center gap-2.5 hover:opacity-75 active:opacity-50 transition-opacity duration-150"
+          >
             <div className="w-7 h-7 bg-apple-blue rounded-[8px] flex items-center justify-center shadow-sm">
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
               </svg>
             </div>
             <span className="text-[15px] font-semibold text-apple-text tracking-[-0.01em]">AI Testcase Generator</span>
-          </div>
+          </button>
 
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-apple-green"></div>
